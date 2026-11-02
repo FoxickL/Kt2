@@ -13,7 +13,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(logger);
 
-// Конфигурация swagger-jsdoc
+// Настройка swagger-jsdoc с жестким абсолютным путем к файлу маршрутов
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
@@ -29,19 +29,14 @@ const swaggerOptions = {
       },
     ],
   },
-  // Указываем, где искать JSDoc-комментарии (в папке routes)
-  apis: [path.join(__dirname, './routes/*.js')], 
+  // ИСПРАВЛЕНО: Явно подключаем конкретный файл для парсинга OpenAPI
+  apis: [path.join(__dirname, 'routes', 'products.js')], 
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
 
-// Подключаем UI документации
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-// Статика для картинок
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-// Подключение роутов
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/api/products', productRoutes);
 
 app.use((req, res, next) => {
