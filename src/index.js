@@ -47,7 +47,20 @@ app.use((req, res, next) => {
 
 app.use(errorHandler);
 
-app.listen(config.port, () => {
-  console.log(`[SERVER] запущен на порту ${config.port}`);
-  console.log(`[SWAGGER] Документация доступна по адресу: http://localhost:${config.port}/api-docs`);
-});
+// ИСПРАВЛЕНО: Асинхронный запуск с подключением к SQLite перед стартом сервера
+async function startServer() {
+  try {
+    // Вызываем функцию инициализации из обновленного config/index.js
+    await config.initDB();
+
+    app.listen(config.port, () => {
+      console.log(`[SERVER] запущен на порту ${config.port}`);
+      console.log(`[SWAGGER] Документация доступна по адресу: http://localhost:${config.port}/api-docs`);
+    });
+  } catch (error) {
+    console.error('[SERVER] Критическая ошибка при инициализации БД и запуске:', error);
+    process.exit(1);
+  }
+}
+
+startServer();

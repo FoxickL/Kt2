@@ -68,6 +68,8 @@
     "side-channel-list": "^1.0.1",
     "side-channel-map": "^1.0.1",
     "side-channel-weakmap": "^1.0.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
     "statuses": "^2.0.2",
     "streamsearch": "^1.1.0",
     "swagger-jsdoc": "^6.3.0",

@@ -3,30 +3,7 @@ const router = express.Router();
 const Joi = require('joi');
 const validate = require('../middleware/validate');
 const upload = require('../middleware/upload');
-
-let products = [
-  { 
-    id: 1, 
-    name: "Ноутбук", 
-    price: 75000, 
-    category: "electronics", 
-    stock: 10,
-    description: "Мощный рабочий инструмент", 
-    imageUrl: null,
-    createdAt: new Date().toISOString()
-  },
-  { 
-    id: 2, 
-    name: "Футболка", 
-    price: 1500, 
-    category: "clothing", 
-    stock: 50,
-    description: "Хлопковая футболка", 
-    imageUrl: null,
-    createdAt: new Date().toISOString()
-  }
-];
-let currentId = 3;
+const { initDB } = require('../config');
 
 const ALLOWED_CATEGORIES = ['electronics', 'clothing', 'food', 'other'];
 
@@ -126,35 +103,62 @@ const productPatchSchema = Joi.object({
  *       200:
  *         description: Успех
  */
-router.get('/', (req, res) => {
-  let { category, minPrice, maxPrice, page, limit } = req.query;
+router.get('/', async (req, res, next) => {
+  try {
+    const db = await initDB();
+    let { category, minPrice, maxPrice, page, limit } = req.query;
 
-  page = parseInt(page, 10) || 1;
-  limit = parseInt(limit, 10) || 10;
-  if (page < 1) page = 1;
-  if (limit < 1) limit = 10;
+    page = parseInt(page, 10) || 1;
+    limit = parseInt(limit, 10) || 10;
+    if (page < 1) page = 1;
+    if (limit < 1) limit = 10;
+    
+    const offset = (page - 1) * limit;
 
-  let filteredProducts = [...products];
+    let query = 'SELECT * FROM products WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) as total FROM products WHERE 1=1';
+    const params = [];
+    const countParams = [];
 
-  if (category) {
-    filteredProducts = filteredProducts.filter(p => p.category === category);
+    if (category) {
+      query += ' AND category = ?';
+      countQuery += ' AND category = ?';
+      params.push(category);
+      countParams.push(category);
+    }
+
+    if (minPrice) {
+      const min = parseFloat(minPrice);
+      if (!isNaN(min)) {
+        query += ' AND price >= ?';
+        countQuery += ' AND price >= ?';
+        params.push(min);
+        countParams.push(min);
+      }
+    }
+
+    if (maxPrice) {
+      const max = parseFloat(maxPrice);
+      if (!isNaN(max)) {
+        query += ' AND price <= ?';
+        countQuery += ' AND price <= ?';
+        params.push(max);
+        countParams.push(max);
+      }
+    }
+
+    const countResult = await db.get(countQuery, countParams);
+    const total = countResult.total;
+
+    query += ' LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const data = await db.all(query, params);
+
+    res.json({ status: 'success', data, total, page, limit });
+  } catch (error) {
+    next(error);
   }
-
-  if (minPrice) {
-    const min = parseFloat(minPrice);
-    if (!isNaN(min)) filteredProducts = filteredProducts.filter(p => p.price >= min);
-  }
-
-  if (maxPrice) {
-    const max = parseFloat(maxPrice);
-    if (!isNaN(max)) filteredProducts = filteredProducts.filter(p => p.price <= max);
-  }
-
-  const total = filteredProducts.length;
-  const startIndex = (page - 1) * limit;
-  const paginatedData = filteredProducts.slice(startIndex, startIndex + limit);
-
-  res.json({ status: 'success', data: paginatedData, total, page, limit });
 });
 
 /**
@@ -173,42 +177,81 @@ router.get('/', (req, res) => {
  *       200:
  *         description: Успех
  */
-router.get('/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const product = products.find(p => p.id === id);
-  
-  if (!product) {
-    return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+router.get('/:id', async (req, res, next) => {
+  try {
+    const db = await initDB();
+    const id = parseInt(req.params.id, 10);
+    const product = await db.get('SELECT * FROM products WHERE id = ?', [id]);
+    
+    if (!product) {
+      return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+    }
+    res.json({ status: 'success', data: product });
+  } catch (error) {
+    next(error);
   }
-  res.json({ status: 'success', data: product });
 });
 
 /**
  * @openapi
  * /api/products:
  *   post:
- *     summary: Создать новый товар
+ *     summary: Создать новый товар с фото
  *     tags: [Products]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/ProductInput'
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               price:
+ *                 type: number
+ *               category:
+ *                 type: string
+ *               stock:
+ *                 type: integer
+ *               description:
+ *                 type: string
+ *               image:
+ *                 type: string
+ *                 format: binary
  *     responses:
  *       201:
  *         description: Создано
  */
-router.post('/', validate(productCreateSchema), (req, res) => {
-  const newProduct = {
-    id: currentId++,
-    ...req.body,
-    imageUrl: null,
-    createdAt: new Date().toISOString()
-  };
-  
-  products.push(newProduct);
-  res.status(201).json({ status: 'success', data: newProduct });
+router.post('/', upload.single('image'), validate(productCreateSchema), async (req, res, next) => {
+  try {
+    const db = await initDB();
+    const { name, price, category, stock, description } = req.body;
+    const createdAt = new Date().toISOString();
+    
+    // Если файл загружен, формируем относительный путь для сохранения в БД
+    const imageUrl = req.file ? `/uploads/products/${req.file.filename}` : null;
+
+    const result = await db.run(
+      `INSERT INTO products (name, price, category, stock, description, imageUrl, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)` ,
+      [name, price, category, stock, description, imageUrl, createdAt]
+    );
+
+    const newProduct = {
+      id: result.lastID,
+      name,
+      price,
+      category,
+      stock,
+      description,
+      imageUrl,
+      createdAt
+    };
+    
+    res.status(201).json({ status: 'success', data: newProduct });
+  } catch (error) {
+    next(error);
+  }
 });
 
 /**
@@ -233,68 +276,82 @@ router.post('/', validate(productCreateSchema), (req, res) => {
  *       200:
  *         description: Успех
  */
-router.put('/:id', validate(productCreateSchema), (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const index = products.findIndex(p => p.id === id);
-  
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+router.put('/:id', validate(productCreateSchema), async (req, res, next) => {
+  try {
+    const db = await initDB();
+    const id = parseInt(req.params.id, 10);
+    const { name, price, category, stock, description } = req.body;
+    
+    const product = await db.get('SELECT * FROM products WHERE id = ?', [id]);
+    if (!product) {
+      return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+    }
+    
+    await db.run(
+      `UPDATE products 
+       SET name = ?, price = ?, category = ?, stock = ?, description = ?
+       WHERE id = ?` ,
+      [name, price, category, stock, description, id]
+    );
+
+    const updatedProduct = {
+      id,
+      name,
+      price,
+      category,
+      stock,
+      description,
+      imageUrl: product.imageUrl,
+      createdAt: product.createdAt
+    };
+    
+    res.json({ status: 'success', data: updatedProduct });
+  } catch (error) {
+    next(error);
   }
-  
-  products[index] = {
-    id: products[index].id,
-    ...req.body,
-    imageUrl: products[index].imageUrl,
-    createdAt: products[index].createdAt
-  };
-  
-  res.json({ status: 'success', data: products[index] });
 });
 
 /**
  * @openapi
  * /api/products/{id}:
  *   patch:
- *     summary: Обновить товар частично (PATCH)
+ *     summary: Обновить данные или фото товара частично
  *     tags: [Products]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               price:
- *                 type: number
- *               category:
- *                 type: string
- *                 enum: [electronics, clothing, food, other]
- *               stock:
- *                 type: integer
- *               description:
- *                 type: string
- *     responses:
- *       200:
- *         description: Успех
  */
-router.patch('/:id', validate(productPatchSchema), (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const index = products.findIndex(p => p.id === id);
-  
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+router.patch('/:id', upload.single('image'), validate(productPatchSchema), async (req, res, next) => {
+  try {
+    const db = await initDB();
+    const id = parseInt(req.params.id, 10);
+    
+    const product = await db.get('SELECT * FROM products WHERE id = ?', [id]);
+    if (!product) {
+      return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+    }
+
+    // Собираем измененные текстовые поля
+    const updateData = { ...req.body };
+
+    // Если прислали новое фото, добавляем его в объект обновления
+    if (req.file) {
+      updateData.imageUrl = `/uploads/products/${req.file.filename}`;
+    }
+
+    const fields = Object.keys(updateData);
+    if (fields.length === 0) {
+      return res.json({ status: 'success', data: product });
+    }
+
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
+    const params = fields.map(field => updateData[field]);
+    params.push(id);
+
+    await db.run(`UPDATE products SET ${setClause} WHERE id = ?`, params);
+
+    const updatedProduct = await db.get('SELECT * FROM products WHERE id = ?', [id]);
+    res.json({ status: 'success', data: updatedProduct });
+  } catch (error) {
+    next(error);
   }
-  
-  products[index] = { ...products[index], ...req.body };
-  res.json({ status: 'success', data: products[index] });
 });
 
 /**
@@ -313,59 +370,21 @@ router.patch('/:id', validate(productPatchSchema), (req, res) => {
  *       200:
  *         description: Удалено
  */
-router.delete('/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const index = products.findIndex(p => p.id === id);
-  
-  if (index === -1) {
-    return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const db = await initDB();
+    const id = parseInt(req.params.id, 10);
+    
+    const product = await db.get('SELECT * FROM products WHERE id = ?', [id]);
+    if (!product) {
+      return res.status(404).json({ status: 'error', message: 'Товар не найден' });
+    }
+    
+    await db.run('DELETE FROM products WHERE id = ?', [id]);
+    res.json({ status: 'success', message: 'Товар удален', data: product });
+  } 
+  catch (error) {
+    next(error);
   }
-  
-  const deletedProduct = products.splice(index, 1);
-  res.json({ status: 'success', message: 'Товар удален', data: deletedProduct });
 });
-
-/**
- * @openapi
- * /api/products/{id}/image:
- *   post:
- *     summary: Загрузить изображение товара
- *     tags: [Products]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             properties:
- *               image:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Успех
- */
-router.post('/:id/image', upload.single('image'), (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const product = products.find(p => p.id === id);
-  
-  if (!product) {
-    return res.status(404).json({ status: 'error', message: 'Товар не найден' });
-  }
-  
-  if (!req.file) {
-    return res.status(400).json({ status: 'error', message: 'Файл изображения не загружен' });
-  }
-
-  product.imageUrl = `/uploads/products/${req.file.filename}`;
-
-  res.json({ status: 'success', message: 'Изображение успешно загружено', data: product });
-});
-
-module.exports = router;
+  module.exports = router;
