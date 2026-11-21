@@ -6,6 +6,7 @@
   "dependencies": {
     "accepts": "^2.0.0",
     "append-field": "^1.0.0",
+    "bcrypt": "^5.1.1",
     "body-parser": "^2.4.0",
     "busboy": "^1.6.0",
     "bytes": "^3.1.2",
@@ -14,6 +15,7 @@
     "content-disposition": "^2.0.1",
     "content-type": "^2.1.0",
     "cookie": "^0.7.2",
+    "cookie-parser": "^1.4.7",
     "cookie-signature": "^1.2.2",
     "debug": "^4.4.3",
     "depd": "^2.0.0",
@@ -27,11 +29,7 @@
     "escape-html": "^1.0.3",
     "etag": "^1.8.1",
     "express": "^5.3.0",
-    "bcrypt": "^5.1.1",
-    "cookie-parser": "^1.4.7",
     "express-rate-limit": "^8.1.0",
-    "helmet": "^8.1.0",
-    "jsonwebtoken": "^9.0.2",
     "finalhandler": "^2.1.1",
     "forwarded": "^0.2.0",
     "fresh": "^2.0.0",
@@ -41,12 +39,14 @@
     "gopd": "^1.2.0",
     "has-symbols": "^1.1.0",
     "hasown": "^2.0.4",
+    "helmet": "^8.1.0",
     "http-errors": "^2.0.1",
     "iconv-lite": "^0.7.3",
     "inherits": "^2.0.4",
     "ipaddr.js": "^1.9.1",
     "is-promise": "^4.0.0",
     "joi": "^18.3.1",
+    "jsonwebtoken": "^9.0.2",
     "math-intrinsics": "^1.1.0",
     "media-typer": "^1.1.1",
     "merge-descriptors": "^2.0.0",
@@ -73,6 +73,8 @@
     "side-channel-list": "^1.0.1",
     "side-channel-map": "^1.0.1",
     "side-channel-weakmap": "^1.0.2",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1",
     "statuses": "^2.0.2",
@@ -94,5 +96,8 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "devDependencies": { "jest": "^30.2.0", "supertest": "^7.1.4" }
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "supertest": "^7.1.4"
+  }
 }
