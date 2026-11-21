@@ -232,9 +232,9 @@ router.post('/', upload.single('image'), validate(productCreateSchema), async (r
     const imageUrl = req.file ? `/uploads/products/${req.file.filename}` : null;
 
     const result = await db.run(
-      `INSERT INTO products (name, price, category, stock, description, imageUrl, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)` ,
-      [name, price, category, stock, description, imageUrl, createdAt]
+      `INSERT INTO products (name, price, category, stock, description, imageUrl, createdAt, ownerId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
+      [name, price, category, stock, description, imageUrl, createdAt, req.user.id]
     );
 
     const newProduct = {
@@ -286,6 +286,7 @@ router.put('/:id', validate(productCreateSchema), async (req, res, next) => {
     if (!product) {
       return res.status(404).json({ status: 'error', message: 'Товар не найден' });
     }
+    if (req.user.role === 'USER' && product.ownerId !== req.user.id) return res.status(403).json({ status: 'error', message: 'Можно изменять только свои записи' });
     
     await db.run(
       `UPDATE products 
@@ -327,6 +328,7 @@ router.patch('/:id', upload.single('image'), validate(productPatchSchema), async
     if (!product) {
       return res.status(404).json({ status: 'error', message: 'Товар не найден' });
     }
+    if (req.user.role === 'USER' && product.ownerId !== req.user.id) return res.status(403).json({ status: 'error', message: 'Можно изменять только свои записи' });
 
     // Собираем измененные текстовые поля
     const updateData = { ...req.body };
@@ -379,6 +381,7 @@ router.delete('/:id', async (req, res, next) => {
     if (!product) {
       return res.status(404).json({ status: 'error', message: 'Товар не найден' });
     }
+    if (req.user.role === 'USER' && product.ownerId !== req.user.id) return res.status(403).json({ status: 'error', message: 'Можно удалять только свои записи' });
     
     await db.run('DELETE FROM products WHERE id = ?', [id]);
     res.json({ status: 'success', message: 'Товар удален', data: product });

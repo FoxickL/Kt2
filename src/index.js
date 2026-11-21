@@ -1,66 +1,43 @@
 const express = require('express');
-const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const config = require('./config');
 const logger = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
 const productRoutes = require('./routes/products');
+const authRoutes = require('./routes/auth');
+const { authenticate, requireRole } = require('./middleware/auth');
 
 const app = express();
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(helmet());
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
 app.use(logger);
-
-// Настройка swagger-jsdoc с жестким абсолютным путем к файлу маршрутов
-const swaggerOptions = {
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Product Catalog API',
-      version: '1.0.0',
-      description: 'Документация REST API для управления каталогом товаров (КТ-02)',
-    },
-    servers: [
-      {
-        url: `http://localhost:${config.port}`,
-        description: 'Локальный сервер',
-      },
-    ],
-  },
-  // ИСПРАВЛЕНО: Явно подключаем конкретный файл для парсинга OpenAPI
-  apis: [path.join(__dirname, 'routes', 'products.js')], 
-};
-
-const swaggerSpec = swaggerJsdoc(swaggerOptions);
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
-app.use('/api/products', productRoutes);
-
-app.use((req, res, next) => {
-  const error = new Error('Ресурс не найден');
-  error.status = 404;
-  next(error);
+app.use('/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: true, legacyHeaders: false }));
+app.use('/auth', authRoutes);
+app.get('/auth/me', authenticate, (req, res) => res.json({ status: 'success', data: req.user }));
+app.use('/api/posts', authenticate, productRoutes);
+app.use('/api/products', authenticate, productRoutes);
+app.get('/api/users', authenticate, requireRole('MODERATOR', 'ADMIN'), async (req, res, next) => {
+  try { const db = await config.initDB(); res.json({ status: 'success', data: await db.all('SELECT id, email, role FROM users ORDER BY id') }); } catch (error) { next(error); }
 });
-
-app.use(errorHandler);
-
-// ИСПРАВЛЕНО: Асинхронный запуск с подключением к SQLite перед стартом сервера
-async function startServer() {
+app.patch('/admin/users/:id/role', authenticate, requireRole('ADMIN'), async (req, res, next) => {
   try {
-    // Вызываем функцию инициализации из обновленного config/index.js
-    await config.initDB();
-
-    app.listen(config.port, () => {
-      console.log(`[SERVER] запущен на порту ${config.port}`);
-      console.log(`[SWAGGER] Документация доступна по адресу: http://localhost:${config.port}/api-docs`);
-    });
-  } catch (error) {
-    console.error('[SERVER] Критическая ошибка при инициализации БД и запуске:', error);
-    process.exit(1);
-  }
-}
-
-startServer();
+    const { role } = req.body;
+    if (!['USER', 'MODERATOR', 'ADMIN'].includes(role)) return res.status(400).json({ status: 'error', message: 'Некорректная роль' });
+    const db = await config.initDB();
+    const result = await db.run('UPDATE users SET role = ? WHERE id = ?', [role, req.params.id]);
+    if (!result.changes) return res.status(404).json({ status: 'error', message: 'Пользователь не найден' });
+    res.json({ status: 'success' });
+  } catch (error) { next(error); }
+});
+const swaggerSpec = swaggerJsdoc({ definition: { openapi: '3.0.0', info: { title: 'Product Catalog API', version: '2.0.0' } }, apis: [] });
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use('/uploads', express.static(config.uploadDir));
+app.use((req, res, next) => { const error = new Error('Ресурс не найден'); error.status = 404; next(error); });
+app.use(errorHandler);
+module.exports = app;
