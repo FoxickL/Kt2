@@ -11,12 +11,12 @@ const authBody = Joi.object({
 });
 
 // path должен совпадать с префиксом, на который смонтирован роутер в app.js
-// (app.use('/api/auth', authRouter)), иначе браузер не отправит cookie на /refresh
+// (app.use('/auth', authRouter)), иначе браузер не отправит cookie на /refresh
 const cookieOptions = {
   httpOnly: true,
   sameSite: 'strict',
   secure: process.env.NODE_ENV === 'production',
-  path: '/api/auth',
+  path: '/auth',
 };
 const REFRESH_MAX_AGE = 7 * 86400000;
 
@@ -29,7 +29,7 @@ const REFRESH_MAX_AGE = 7 * 86400000;
 
 /**
  * @swagger
- * /api/auth/register:
+ * /auth/register:
  *   post:
  *     summary: Регистрация пользователя
  *     description: Создаёт пользователя, возвращает access-токен и устанавливает refresh-токен в httpOnly cookie.
@@ -81,7 +81,7 @@ router.post('/register', validate(authBody), async (req, res, next) => {
 
 /**
  * @swagger
- * /api/auth/login:
+ * /auth/login:
  *   post:
  *     summary: Вход в систему
  *     description: Проверяет email и пароль, возвращает access-токен и устанавливает refresh-токен в httpOnly cookie.
@@ -135,7 +135,7 @@ router.post('/login', validate(authBody), async (req, res, next) => {
 
 /**
  * @swagger
- * /api/auth/refresh:
+ * /auth/refresh:
  *   post:
  *     summary: Обновление access-токена
  *     description: Берёт refresh-токен из httpOnly cookie, выдаёт новый access-токен и обновляет cookie.
@@ -181,7 +181,7 @@ router.post('/refresh', async (req, res) => {
 
 /**
  * @swagger
- * /api/auth/logout:
+ * /auth/logout:
  *   post:
  *     summary: Выход из системы
  *     description: Очищает refresh-cookie.
