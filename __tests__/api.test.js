@@ -1,0 +1,17 @@
+const request=require('supertest');
+const jwt=require('jsonwebtoken');
+const app=require('../src/app');
+const config=require('../src/config');
+beforeAll(async()=>{await config.prisma.$connect();});
+afterAll(async()=>{await config.prisma.$disconnect();});
+const bearer=(id,role='USER')=>`Bearer ${jwt.sign({id,email:`user${id}@example.com`,role},config.accessSecret,{expiresIn:'5m'})}`;
+const makeUser=async(id)=>config.prisma.user.upsert({where:{email:`test-${id}@example.com`},create:{id,email:`test-${id}@example.com`,passwordHash:'not-used'},update:{}});
+test('validation rejects invalid registration',async()=>{expect((await request(app).post('/auth/register').send({email:'wrong',password:'short'})).status).toBe(400);});
+test('registration creates account and tokens',async()=>{const email=`${Date.now()}@example.com`;const r=await request(app).post('/auth/register').send({email,password:'Password-12345'});expect(r.status).toBe(201);expect(r.body.data.accessToken).toBeTruthy();expect(r.headers['set-cookie'][0]).toMatch(/HttpOnly/i);});
+test('duplicate email returns 409',async()=>{const email=`dup-${Date.now()}@example.com`;await request(app).post('/auth/register').send({email,password:'Password-12345'});expect((await request(app).post('/auth/register').send({email,password:'Password-12345'})).status).toBe(409);});
+test('login rejects wrong credentials',async()=>{expect((await request(app).post('/auth/login').send({email:'missing@example.com',password:'Password-12345'})).status).toBe(401);});
+test('protected projects reject anonymous requests',async()=>{expect((await request(app).get('/api/projects')).status).toBe(401);});
+test('create project returns 201',async()=>{await makeUser(909);const r=await request(app).post('/api/projects').set('Authorization',bearer(909)).send({name:'Owned project'});expect(r.status).toBe(201);});
+test('user cannot read another owners project',async()=>{await makeUser(919);await makeUser(920);const p=await config.prisma.project.create({data:{name:'private project',ownerId:919}});expect((await request(app).get(`/api/projects/${p.id}`).set('Authorization',bearer(920))).status).toBe(403);});
+test('project list paginates',async()=>{const r=await request(app).get('/api/projects?page=1&limit=5').set('Authorization',bearer(909));expect(r.status).toBe(200);expect(r.body.meta).toMatchObject({page:1,limit:5});});
+test('Swagger UI is available',async()=>{expect((await request(app).get('/api/docs/')).status).toBe(200);});

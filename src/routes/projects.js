@@ -1,0 +1,20 @@
+const router = require('express').Router();
+const Joi = require('joi');
+const config = require('../config');
+const validate = require('../middleware/validate');
+const rbac = require('../middleware/rbac');
+const schema = Joi.object({ name: Joi.string().trim().min(2).max(120).required(), description: Joi.string().max(2000).allow('', null) });
+const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const ownerOrAdmin = (req, ownerId) => req.user.role === 'ADMIN' || req.user.id === ownerId;
+router.get('/', asyncRoute(async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1), limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
+  const where = req.user.role === 'ADMIN' ? {} : { ownerId: req.user.id };
+  const [data,total] = await Promise.all([config.prisma.project.findMany({ where, skip:(page-1)*limit, take:limit, include:{_count:{select:{tasks:true}}}, orderBy:{createdAt:'desc'} }),config.prisma.project.count({where})]);
+  res.json({status:'success',data,meta:{page,limit,total}});
+}));
+router.post('/', validate(schema), asyncRoute(async (req,res)=>res.status(201).json({status:'success',data:await config.prisma.project.create({data:{...req.body,ownerId:req.user.id}})})));
+router.get('/:id', asyncRoute(async(req,res)=>{const p=await config.prisma.project.findUnique({where:{id:Number(req.params.id)},include:{tasks:true}});if(!p)return res.status(404).json({status:'error',message:'Проект не найден'});if(!ownerOrAdmin(req,p.ownerId))return res.status(403).json({status:'error',message:'Нет доступа'});res.json({status:'success',data:p});}));
+router.put('/:id', validate(schema), asyncRoute(async(req,res)=>{const p=await config.prisma.project.findUnique({where:{id:Number(req.params.id)}});if(!p)return res.status(404).json({status:'error',message:'Проект не найден'});if(!ownerOrAdmin(req,p.ownerId))return res.status(403).json({status:'error',message:'Нет доступа'});res.json({status:'success',data:await config.prisma.project.update({where:{id:p.id},data:req.body})});}));
+router.patch('/:id', validate(schema.min(1)), asyncRoute(async(req,res)=>{const p=await config.prisma.project.findUnique({where:{id:Number(req.params.id)}});if(!p)return res.status(404).json({status:'error',message:'Проект не найден'});if(!ownerOrAdmin(req,p.ownerId))return res.status(403).json({status:'error',message:'Нет доступа'});res.json({status:'success',data:await config.prisma.project.update({where:{id:p.id},data:req.body})});}));
+router.delete('/:id', asyncRoute(async(req,res)=>{const p=await config.prisma.project.findUnique({where:{id:Number(req.params.id)}});if(!p)return res.status(404).json({status:'error',message:'Проект не найден'});if(!ownerOrAdmin(req,p.ownerId))return res.status(403).json({status:'error',message:'Нет доступа'});await config.prisma.project.delete({where:{id:p.id}});res.status(204).end();}));
+module.exports=router;

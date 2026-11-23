@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: task_api
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d task_api"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  app:
+    build: .
+    env_file: .env
+    ports: ["3000:3000"]
+    depends_on:
+      db: { condition: service_healthy }
+volumes:
+  postgres_data:

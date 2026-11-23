@@ -1,3 +1,2 @@
-const app = require('./index');
-const config = require('./config');
-config.initDB().then(() => app.listen(config.port, () => console.log(`[SERVER] запущен на порту ${config.port}`))).catch(error => { console.error('[SERVER] Ошибка инициализации:', error.message); process.exit(1); });
+const app=require('./app');const {port,prisma}=require('./config');
+prisma.$connect().then(()=>app.listen(port,()=>console.log(`KT6 API listening on ${port}`))).catch(error=>{console.error('Database connection failed:',error.message);process.exit(1);});
