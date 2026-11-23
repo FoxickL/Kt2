@@ -9,9 +9,6 @@ const authBody = Joi.object({
   email: Joi.string().email().max(254).required(),
   password: Joi.string().min(8).max(128).required(),
 });
-
-// path должен совпадать с префиксом, на который смонтирован роутер в app.js
-// (app.use('/auth', authRouter)), иначе браузер не отправит cookie на /refresh
 const cookieOptions = {
   httpOnly: true,
   sameSite: 'strict',
